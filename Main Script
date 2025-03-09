@@ -1,0 +1,128 @@
+local a = string.char
+local b = game:GetService(a(80, 108, 97, 121, 101, 114, 115))
+local c = game:GetService(a(82, 117, 110, 83, 101, 114, 118, 105, 99, 101))
+local d = game:GetService(a(83,116,97,114,116,101,114,71,117,105))
+local e = game:GetService(a(85,115,101,114,73,110,112,117,116,83,101,114,118,105,99,101))
+local f = b.LocalPlayer
+local g = true
+local h = true
+local i = Color3.fromRGB(0, 0, 255)
+local j = Color3.fromRGB(255, 0, 0)
+ 
+local function k(l, m, n)
+    d:SetCore(a(83, 101, 110, 100, 78, 111, 116, 105, 102, 105, 99, 97, 116, 105, 111, 110), {
+        Title = l,
+        Text = m,
+        Duration = n or 3
+    })
+end
+ 
+k(a(83, 121, 115, 116, 101, 109, 32, 78, 111, 116, 105, 102, 105, 99, 97, 116, 105, 111, 110), "Author: SynX 2025", 5)
+ 
+local function o(p)
+    return h and p.TeamColor.Color or ((f.TeamColor == p.TeamColor) and i or j)
+end
+ 
+local function p(q)
+    for _, r in ipairs({ "GetReal", "BoxESP", "NameESP" }) do
+        local s = q:FindFirstChild(r, true)
+        if s then
+            s:Destroy()
+        end
+    end
+end
+ 
+local function t(u, v)
+    if not u:IsDescendantOf(workspace) then return end
+    local w = u:FindFirstChild(a(71, 101, 116, 82, 101, 97, 108))
+    if not w then
+        w = Instance.new(a(72, 105, 103, 104,108,105,103,104,116))
+        w.Name = a(71, 101, 116, 82, 101, 97, 108)
+        w.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+        w.Parent = u
+    end
+    w.FillColor = v
+    w.OutlineColor = v
+    w.Enabled = g
+end
+ 
+local function x(y)
+    local z = y.Character
+    if not z then return end
+    local A = z:FindFirstChild(a(72, 117, 109, 97, 110, 111, 105, 100, 82, 111, 111, 116, 80, 97, 114, 116)) or z:FindFirstChild(a(85, 112, 112, 101, 114, 84, 111, 114, 115, 111))
+    if not A then return end
+    local B = A:FindFirstChild(a(66, 111, 120, 69, 83, 80))
+    if not B then
+        B = Instance.new(a(66, 111, 120, 72, 97, 110, 100, 108, 101, 65, 100, 111, 114, 110, 109, 101, 110, 116))
+        B.Name = a(66, 111, 120, 69, 83, 80)
+        B.Size = Vector3.new(2.5, 4, 2)
+        B.Adornee = A
+        B.AlwaysOnTop = true
+        B.ZIndex = 5
+        B.Transparency = 0.3
+        B.Parent = A
+    end
+    B.Color3 = o(y)
+    B.Visible = g
+end
+ 
+local function C(D)
+    local E = D.Character
+    if not E or not E:FindFirstChild(a(72, 101, 97, 100)) then return end
+    local F = E.Head
+    local G = F:FindFirstChild(a(78, 97, 109, 101, 69, 83, 80))
+    if not G then
+        G = Instance.new(a(66, 105, 108, 108, 98, 111, 97, 114, 100, 71, 117, 105))
+        G.Name = a(78, 97, 109, 101, 69, 83, 80)
+        G.Size = UDim2.new(0, 200, 0, 50)
+        G.AlwaysOnTop = true
+        local H = Instance.new(a(84, 101, 120, 116, 76, 97, 98, 101, 108))
+        H.Name = a(78, 97, 109, 101, 76, 97, 98, 101, 108)
+        H.BackgroundTransparency = 1
+        H.Size = UDim2.new(1, 0, 1, 0)
+        H.Font = Enum.Font.SourceSansBold
+        H.TextSize = 16
+        H.TextStrokeTransparency = 0.5
+        H.Parent = G
+        G.Parent = F
+    end
+    local H = G:FindFirstChild(a(78, 97, 109, 101, 76, 97, 98, 101, 108))
+    if H then
+        local I = 0
+        if f.Character and f.Character:FindFirstChild(a(72, 117, 109, 97, 110, 111, 105, 100, 82, 111, 111, 116, 80, 97, 114, 116)) then
+            I = (f.Character.HumanoidRootPart.Position - F.Position).magnitude
+        end
+        H.Text = string.format("%s [%d studs]", D.Name, math.floor(I))
+        H.TextColor3 = o(D)
+        H.Visible = g
+        G.StudsOffset = Vector3.new(0, 3 + math.clamp(I / 40, 0, 7), 0)
+    end
+end
+ 
+local function J()
+    for K, L in ipairs(b:GetPlayers()) do
+        if L ~= f and L.Character then
+            if g then
+                t(L.Character, o(L))
+                C(L)
+                x(L)
+            else
+                p(L.Character) -- Clean up if disabled
+            end
+        end
+    end
+end
+ 
+e.InputBegan:Connect(function(M, N)
+    if M.KeyCode == Enum.KeyCode.RightBracket and not N then
+        g = not g
+        k(a(83, 121, 115, 116, 101, 109, 32, 78, 111, 116, 105, 102, 105, 99, 97, 116, 105, 111, 110), g and a(69, 83, 80, 32, 69, 110, 97, 98, 108, 101, 100) or a(69, 83, 80, 32, 68, 105, 115, 97, 98, 108, 101, 100))
+    elseif M.KeyCode == Enum.KeyCode.LeftBracket and not N then
+        k(a(83, 121, 115, 116, 101, 109, 32, 78, 111, 116, 105, 102, 105, 99, 97, 116, 105, 111, 110), a(69, 83, 80, 32, 82, 101, 108, 111, 97, 100, 101, 100))
+        J()
+    end
+end)
+ 
+c.Heartbeat:Connect(J)
+ 
+k("System Notification", "ESP Active. Press ] to toggle, [ to reload.", 5)
