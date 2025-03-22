@@ -1,128 +1,131 @@
-local a = string.char
-local b = game:GetService(a(80, 108, 97, 121, 101, 114, 115))
-local c = game:GetService(a(82, 117, 110, 83, 101, 114, 118, 105, 99, 101))
-local d = game:GetService(a(83,116,97,114,116,101,114,71,117,105))
-local e = game:GetService(a(85,115,101,114,73,110,112,117,116,83,101,114,118,105,99,101))
-local f = b.LocalPlayer
-local g = true
-local h = true
-local i = Color3.fromRGB(0, 0, 255)
-local j = Color3.fromRGB(255, 0, 0)
+local char = string.char
+local function strToName(...) return char(...) end
 
-local function k(l, m, n)
-    d:SetCore(a(83, 101, 110, 100, 78, 111, 116, 105, 102, 105, 99, 97, 116, 105, 111, 110), {
-        Title = l,
-        Text = m,
-        Duration = n or 3
+local Players = game:GetService(strToName(80,108,97,121,101,114,115)) -- Players
+local RunService = game:GetService(strToName(82,117,110,83,101,114,118,105,99,101)) -- RunService
+local StarterGui = game:GetService(strToName(83,116,97,114,116,101,114,71,117,105)) -- StarterGui
+local UserInputService = game:GetService(strToName(85,115,101,114,73,110,112,117,116,83,101,114,118,105,99,101)) -- InputService
+
+local LocalPlayer = Players.LocalPlayer
+local ESPEnabled = true
+local LastESPUpdate = 0
+
+-- 🛑 **Improved Notification Function**
+local function Notify(title, message, duration)
+    StarterGui:SetCore(strToName(83,101,110,100,78,111,116,105,102,105,99,97,116,105,111,110), {
+        Title = title,
+        Text = message,
+        Duration = duration or 3
     })
 end
 
-k(a(83, 121, 115, 116, 101, 109, 32, 78, 111, 116, 105, 102, 105, 99, 97, 116, 105, 111, 110), "Author: SynX 2025", 5)
+Notify("UESP", "ESP Active. Press ] to toggle, [ to reload.", 5)
 
-local function o(p)
-    return h and p.TeamColor.Color or ((f.TeamColor == p.TeamColor) and i or j)
+-- ✅ **Safe Team Color Function**
+local function GetPlayerColor(Player)
+    return (Player.Team and Player.Team.TeamColor.Color) or Color3.fromRGB(255, 255, 255)
 end
 
-local function p(q)
-    for _, r in ipairs({ "GetReal", "BoxESP", "NameESP" }) do
-        local s = q:FindFirstChild(r, true)
-        if s then
-            s:Destroy()
+-- 🛠 **ESP Creation**
+local function CreateESP(Character, Player)
+    if not Character then return end
+
+    -- 📦 **Box ESP (Now More Accurate)**
+    local RootPart = Character:FindFirstChild("HumanoidRootPart") or Character:FindFirstChild("UpperTorso")
+    if RootPart then
+        local Box = RootPart:FindFirstChild("BoxESP")
+        if not Box then
+            Box = Instance.new("BoxHandleAdornment")
+            Box.Name = "BoxESP"
+            Box.Size = Vector3.new(1.3, 2.2, 1.3) -- 🔧 **Smaller for Accuracy**
+            Box.Adornee = RootPart
+            Box.AlwaysOnTop = true
+            Box.ZIndex = 5
+            Box.Transparency = 0.2
+            Box.Parent = RootPart
+        end
+        Box.Color3 = GetPlayerColor(Player)
+        Box.Visible = ESPEnabled
+    end
+
+    -- 🔤 **Name ESP (Adjusted for Distance)**
+    local Head = Character:FindFirstChild("Head")
+    if Head then
+        local NameTag = Head:FindFirstChild("NameESP")
+        if not NameTag then
+            NameTag = Instance.new("BillboardGui")
+            NameTag.Name = "NameESP"
+            NameTag.Size = UDim2.new(0, 150, 0, 40)
+            NameTag.Adornee = Head
+            NameTag.AlwaysOnTop = true
+
+            local Label = Instance.new("TextLabel")
+            Label.Name = "NameLabel"
+            Label.BackgroundTransparency = 1
+            Label.Size = UDim2.new(1, 0, 1, 0)
+            Label.Font = Enum.Font.SourceSansBold
+            Label.TextStrokeTransparency = 0.5
+            Label.Parent = NameTag
+            NameTag.Parent = Head
+        end
+
+        -- 📏 **Distance-Based Scaling**
+        local Distance = 0
+        local LocalRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+        if LocalRoot then
+            Distance = (LocalRoot.Position - Head.Position).Magnitude
+        end
+
+        local Scale = math.clamp(1 - (Distance / 500), 0.5, 1)
+        local Height = 3 + math.clamp(Distance / 40, 1, 10)
+
+        NameTag.Size = UDim2.new(0, 150 * Scale, 0, 40 * Scale)
+        NameTag.StudsOffset = Vector3.new(0, Height, 0)
+        NameTag.NameLabel.Text = string.format("%s [%d studs]", Player.Name, math.floor(Distance))
+        NameTag.NameLabel.TextColor3 = GetPlayerColor(Player)
+        NameTag.NameLabel.TextSize = math.clamp(16 * Scale, 10, 16)
+        NameTag.Enabled = ESPEnabled
+    end
+
+    -- 🔥 **Chams ESP (Now Properly Applied)**
+    local Highlight = Character:FindFirstChild("ChamsESP")
+    if not Highlight then
+        Highlight = Instance.new("Highlight")
+        Highlight.Name = "ChamsESP"
+        Highlight.Parent = Character
+    end
+
+    Highlight.FillColor = GetPlayerColor(Player)
+    Highlight.OutlineColor = GetPlayerColor(Player)
+    Highlight.FillTransparency = 0.15 -- 🔧 **More Visible**
+    Highlight.OutlineTransparency = 0
+    Highlight.Enabled = ESPEnabled
+end
+
+-- 🔄 **ESP Update Function (Now More Efficient)**
+local function UpdateESP()
+    if tick() - LastESPUpdate < 0.1 then return end -- ⏳ **Updates Every 0.1s**
+    LastESPUpdate = tick()
+
+    for _, Player in ipairs(Players:GetPlayers()) do
+        if Player ~= LocalPlayer and Player.Character then
+            CreateESP(Player.Character, Player)
         end
     end
 end
 
-local function t(u, v)
-    if not u:IsDescendantOf(workspace) then return end
-    local w = u:FindFirstChild(a(71, 101, 116, 82, 101, 97, 108))
-    if not w then
-        w = Instance.new(a(72, 105, 103, 104,108,105,103,104,116))
-        w.Name = a(71, 101, 116, 82, 101, 97, 108)
-        w.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-        w.Parent = u
-    end
-    w.FillColor = v
-    w.OutlineColor = v
-    w.Enabled = g
-end
-
-local function x(y)
-    local z = y.Character
-    if not z then return end
-    local A = z:FindFirstChild(a(72, 117, 109, 97, 110, 111, 105, 100, 82, 111, 111, 116, 80, 97, 114, 116)) or z:FindFirstChild(a(85, 112, 112, 101, 114, 84, 111, 114, 115, 111))
-    if not A then return end
-    local B = A:FindFirstChild(a(66, 111, 120, 69, 83, 80))
-    if not B then
-        B = Instance.new(a(66, 111, 120, 72, 97, 110, 100, 108, 101, 65, 100, 111, 114, 110, 109, 101, 110, 116))
-        B.Name = a(66, 111, 120, 69, 83, 80)
-        B.Size = Vector3.new(2.5, 4, 2)
-        B.Adornee = A
-        B.AlwaysOnTop = true
-        B.ZIndex = 5
-        B.Transparency = 0.3
-        B.Parent = A
-    end
-    B.Color3 = o(y)
-    B.Visible = g
-end
-
-local function C(D)
-    local E = D.Character
-    if not E or not E:FindFirstChild(a(72, 101, 97, 100)) then return end
-    local F = E.Head
-    local G = F:FindFirstChild(a(78, 97, 109, 101, 69, 83, 80))
-    if not G then
-        G = Instance.new(a(66, 105, 108, 108, 98, 111, 97, 114, 100, 71, 117, 105))
-        G.Name = a(78, 97, 109, 101, 69, 83, 80)
-        G.Size = UDim2.new(0, 200, 0, 50)
-        G.AlwaysOnTop = true
-        local H = Instance.new(a(84, 101, 120, 116, 76, 97, 98, 101, 108))
-        H.Name = a(78, 97, 109, 101, 76, 97, 98, 101, 108)
-        H.BackgroundTransparency = 1
-        H.Size = UDim2.new(1, 0, 1, 0)
-        H.Font = Enum.Font.SourceSansBold
-        H.TextSize = 16
-        H.TextStrokeTransparency = 0.5
-        H.Parent = G
-        G.Parent = F
-    end
-    local H = G:FindFirstChild(a(78, 97, 109, 101, 76, 97, 98, 101, 108))
-    if H then
-        local I = 0
-        if f.Character and f.Character:FindFirstChild(a(72, 117, 109, 97, 110, 111, 105, 100, 82, 111, 111, 116, 80, 97, 114, 116)) then
-            I = (f.Character.HumanoidRootPart.Position - F.Position).magnitude
-        end
-        H.Text = string.format("%s [%d studs]", D.Name, math.floor(I))
-        H.TextColor3 = o(D)
-        H.Visible = g
-        G.StudsOffset = Vector3.new(0, 3 + math.clamp(I / 40, 0, 7), 0)
-    end
-end
-
-local function J()
-    for K, L in ipairs(b:GetPlayers()) do
-        if L ~= f and L.Character then
-            if g then
-                t(L.Character, o(L))
-                C(L)
-                x(L)
-            else
-                p(L.Character) -- Clean up if disabled
-            end
-        end
-    end
-end
-
-e.InputBegan:Connect(function(M, N)
-    if M.KeyCode == Enum.KeyCode.RightBracket and not N then
-        g = not g
-        k(a(83, 121, 115, 116, 101, 109, 32, 78, 111, 116, 105, 102, 105, 99, 97, 116, 105, 111, 110), g and a(69, 83, 80, 32, 69, 110, 97, 98, 108, 101, 100) or a(69, 83, 80, 32, 68, 105, 115, 97, 98, 108, 101, 100))
-    elseif M.KeyCode == Enum.KeyCode.LeftBracket and not N then
-        k(a(83, 121, 115, 116, 101, 109, 32, 78, 111, 116, 105, 102, 105, 99, 97, 116, 105, 111, 110), a(69, 83, 80, 32, 82, 101, 108, 111, 97, 100, 101, 100))
-        J()
+-- 🎮 **Toggle & Reload**
+UserInputService.InputBegan:Connect(function(Input, GameProcessed)
+    if GameProcessed then return end
+    if Input.KeyCode == Enum.KeyCode.RightBracket then
+        ESPEnabled = not ESPEnabled
+        Notify("UESP", ESPEnabled and "Enabled" or "Disabled")
+        UpdateESP()
+    elseif Input.KeyCode == Enum.KeyCode.LeftBracket then
+        Notify("UESP", "ESP Reloaded")
+        UpdateESP()
     end
 end)
 
-c.Heartbeat:Connect(J)
-
-k("System Notification", "ESP Active. Press ] to toggle, [ to reload.", 5)
+-- 🏎 **Optimized RunService Connection**
+RunService.Heartbeat:Connect(UpdateESP)
