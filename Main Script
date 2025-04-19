@@ -48,7 +48,7 @@ local function CreateESP(Character, Player)
             Box.Adornee = RootPart
             Box.AlwaysOnTop = true
             Box.ZIndex = 5
-            Box.Transparency = 0.2
+            Box.Transparency = 0.3
             Box.Parent = RootPart
         end
         Box.Color3 = GetPlayerColor(Player)
@@ -61,7 +61,7 @@ local function CreateESP(Character, Player)
         if not NameTag then
             NameTag = Instance.new("BillboardGui")
             NameTag.Name = "NameESP"
-            NameTag.Size = UDim2.new(0, 150, 0, 40)
+            NameTag.Size = UDim2.new(0, 180, 0, 50) -- Increased size
             NameTag.Adornee = Head
             NameTag.AlwaysOnTop = true
 
@@ -71,6 +71,7 @@ local function CreateESP(Character, Player)
             Label.Size = UDim2.new(1, 0, 1, 0)
             Label.Font = Enum.Font.SourceSansBold
             Label.TextStrokeTransparency = 0.5
+            Label.TextScaled = false
             Label.Parent = NameTag
             NameTag.Parent = Head
         end
@@ -81,10 +82,10 @@ local function CreateESP(Character, Player)
             Distance = (LocalRoot.Position - Head.Position).Magnitude
         end
 
-        local Scale = math.clamp(1 - (Distance / 500), 0.5, 1)
-        local Height = 3 + math.clamp(Distance / 40, 1, 10)
+        local Scale = math.clamp(1 - (Distance / 500), 0.6, 1.2) -- Boosted scale
+        local Height = 4 + math.clamp(Distance / 40, 1, 10)
 
-        NameTag.Size = UDim2.new(0, 150 * Scale, 0, 40 * Scale)
+        NameTag.Size = UDim2.new(0, 180 * Scale, 0, 50 * Scale)
         NameTag.StudsOffset = Vector3.new(0, Height, 0)
 
         local displayText = ""
@@ -98,7 +99,7 @@ local function CreateESP(Character, Player)
 
         NameTag.NameLabel.Text = string.format("%s [%d studs]", displayText, math.floor(Distance))
         NameTag.NameLabel.TextColor3 = GetPlayerColor(Player)
-        NameTag.NameLabel.TextSize = math.clamp(16 * Scale, 10, 16)
+        NameTag.NameLabel.TextSize = math.clamp(18 * Scale, 12, 20) -- Increased font size
         NameTag.Enabled = ESPEnabled
     end
 
@@ -111,8 +112,8 @@ local function CreateESP(Character, Player)
 
     Highlight.FillColor = GetPlayerColor(Player)
     Highlight.OutlineColor = GetPlayerColor(Player)
-    Highlight.FillTransparency = 0.15
-    Highlight.OutlineTransparency = 0
+    Highlight.FillTransparency = 0.5 -- More see-through for clearer view
+    Highlight.OutlineTransparency = 0.2 -- Slightly faded border
     Highlight.Enabled = ESPEnabled
 end
 
