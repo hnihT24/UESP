@@ -9,8 +9,18 @@ local UserInputService = game:GetService(strToName(85,115,101,114,73,110,112,117
 local LocalPlayer = Players.LocalPlayer
 local ESPEnabled = true
 local LastESPUpdate = 0
+local ESPMode = 2 -- Default is DisplayName
 
--- 🛑 **Improved Notification Function**
+local function GetModeText()
+    if ESPMode == 1 then
+        return "Username"
+    elseif ESPMode == 2 then
+        return "DisplayName"
+    elseif ESPMode == 3 then
+        return "Both"
+    end
+end
+
 local function Notify(title, message, duration)
     StarterGui:SetCore(strToName(83,101,110,100,78,111,116,105,102,105,99,97,116,105,111,110), {
         Title = title,
@@ -19,25 +29,22 @@ local function Notify(title, message, duration)
     })
 end
 
-Notify("UESP", "ESP Active. Press ] to toggle, [ to reload.", 5)
+Notify("UESP", "ESP Active. Press ] to toggle, [ to switch name mode (" .. GetModeText() .. ")", 5)
 
--- ✅ **Safe Team Color Function**
 local function GetPlayerColor(Player)
     return (Player.Team and Player.Team.TeamColor.Color) or Color3.fromRGB(255, 255, 255)
 end
 
--- 🛠 **ESP Creation**
 local function CreateESP(Character, Player)
     if not Character then return end
 
-    -- 📦 **Box ESP (Now More Accurate)**
     local RootPart = Character:FindFirstChild("HumanoidRootPart") or Character:FindFirstChild("UpperTorso")
     if RootPart then
         local Box = RootPart:FindFirstChild("BoxESP")
         if not Box then
             Box = Instance.new("BoxHandleAdornment")
             Box.Name = "BoxESP"
-            Box.Size = Vector3.new(1.3, 2.2, 1.3) -- 🔧 **Smaller for Accuracy**
+            Box.Size = Vector3.new(1.3, 2.2, 1.3)
             Box.Adornee = RootPart
             Box.AlwaysOnTop = true
             Box.ZIndex = 5
@@ -48,7 +55,6 @@ local function CreateESP(Character, Player)
         Box.Visible = ESPEnabled
     end
 
-    -- 🔤 **Name ESP (Adjusted for Distance)**
     local Head = Character:FindFirstChild("Head")
     if Head then
         local NameTag = Head:FindFirstChild("NameESP")
@@ -69,7 +75,6 @@ local function CreateESP(Character, Player)
             NameTag.Parent = Head
         end
 
-        -- 📏 **Distance-Based Scaling**
         local Distance = 0
         local LocalRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
         if LocalRoot then
@@ -81,13 +86,22 @@ local function CreateESP(Character, Player)
 
         NameTag.Size = UDim2.new(0, 150 * Scale, 0, 40 * Scale)
         NameTag.StudsOffset = Vector3.new(0, Height, 0)
-        NameTag.NameLabel.Text = string.format("%s [%d studs]", Player.Name, math.floor(Distance))
+
+        local displayText = ""
+        if ESPMode == 1 then
+            displayText = Player.Name
+        elseif ESPMode == 2 then
+            displayText = Player.DisplayName
+        elseif ESPMode == 3 then
+            displayText = string.format("%s (%s)", Player.DisplayName, Player.Name)
+        end
+
+        NameTag.NameLabel.Text = string.format("%s [%d studs]", displayText, math.floor(Distance))
         NameTag.NameLabel.TextColor3 = GetPlayerColor(Player)
         NameTag.NameLabel.TextSize = math.clamp(16 * Scale, 10, 16)
         NameTag.Enabled = ESPEnabled
     end
 
-    -- 🔥 **Chams ESP (Now Properly Applied)**
     local Highlight = Character:FindFirstChild("ChamsESP")
     if not Highlight then
         Highlight = Instance.new("Highlight")
@@ -97,14 +111,13 @@ local function CreateESP(Character, Player)
 
     Highlight.FillColor = GetPlayerColor(Player)
     Highlight.OutlineColor = GetPlayerColor(Player)
-    Highlight.FillTransparency = 0.15 -- 🔧 **More Visible**
+    Highlight.FillTransparency = 0.15
     Highlight.OutlineTransparency = 0
     Highlight.Enabled = ESPEnabled
 end
 
--- 🔄 **ESP Update Function (Now More Efficient)**
 local function UpdateESP()
-    if tick() - LastESPUpdate < 0.1 then return end -- ⏳ **Updates Every 0.1s**
+    if tick() - LastESPUpdate < 0.1 then return end
     LastESPUpdate = tick()
 
     for _, Player in ipairs(Players:GetPlayers()) do
@@ -114,18 +127,17 @@ local function UpdateESP()
     end
 end
 
--- 🎮 **Toggle & Reload**
 UserInputService.InputBegan:Connect(function(Input, GameProcessed)
     if GameProcessed then return end
     if Input.KeyCode == Enum.KeyCode.RightBracket then
         ESPEnabled = not ESPEnabled
-        Notify("UESP", ESPEnabled and "Enabled" or "Disabled")
+        Notify("UESP", ESPEnabled and "ESP Enabled" or "ESP Disabled")
         UpdateESP()
     elseif Input.KeyCode == Enum.KeyCode.LeftBracket then
-        Notify("UESP", "ESP Reloaded")
+        ESPMode = (ESPMode % 3) + 1
+        Notify("UESP", "Name mode: " .. GetModeText())
         UpdateESP()
     end
 end)
 
--- 🏎 **Optimized RunService Connection**
 RunService.Heartbeat:Connect(UpdateESP)
