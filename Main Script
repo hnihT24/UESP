@@ -1,176 +1,143 @@
--- Optimized UESP with event-driven tracking to reduce FPS impact
-pcall(function()
-    local c = string.char
-    local Svc = function(...) return game:GetService(c(...)) end
-    local Players          = Svc(80,108,97,121,101,114,115)     -- "Players"
-    local Workspace        = Svc(87,111,114,107,115,112,97,99,101) -- "Workspace"
-    local RunService       = Svc(82,117,110,83,101,114,118,105,99,101) -- "RunService"
-    local StarterGui       = Svc(83,116,97,114,116,101,114,71,117,105) -- "StarterGui"
-    local UserInputService = Svc(85,115,101,114,73,110,112,117,116,83,101,114,118,105,99,101) -- "UserInputService"
+local char = string.char
+local function strToName(...) return char(...) end
 
-    math.randomseed(tick())
-    local function genLabel(len)
-        local t={} for i=1,len do
-            local code=math.random(48,122)
-            if not((58<=code and code<=64) or (91<=code and code<=96)) then t[#t+1]=c(code) end
-        end
-        return table.concat(t)
+local Players = game:GetService(strToName(80,108,97,121,101,114,115)) -- Players
+local RunService = game:GetService(strToName(82,117,110,83,101,114,118,105,99,101)) -- RunService
+local StarterGui = game:GetService(strToName(83,116,97,114,116,101,114,71,117,105)) -- StarterGui
+local UserInputService = game:GetService(strToName(85,115,101,114,73,110,112,117,116,83,101,114,118,105,99,101)) -- InputService
+
+local LocalPlayer = Players.LocalPlayer
+local ESPEnabled = true
+local LastESPUpdate = 0
+local ESPMode = 2 -- Default is DisplayName
+
+local function GetModeText()
+    if ESPMode == 1 then
+        return "Username"
+    elseif ESPMode == 2 then
+        return "DisplayName"
+    elseif ESPMode == 3 then
+        return "Both"
     end
-    local BOX_L, TAG_L, CHAMS_L, TITLE = genLabel(12), genLabel(10), genLabel(14), genLabel(8)
+end
 
-    local function Notify(msg, dur)
-        StarterGui:SetCore(c(83,101,110,100,78,111,116,105,102,105,99,97,116,105,111,110), {Title=TITLE, Text=msg, Duration=dur or 3})
-    end
-    Notify("Active", 3)
+local function Notify(title, message, duration)
+    StarterGui:SetCore(strToName(83,101,110,100,78,111,116,105,102,105,99,97,116,105,111,110), {
+        Title = title,
+        Text = message,
+        Duration = duration or 3
+    })
+end
 
-    local playerChars, npcModels = {}, {}
-    local Enabled, Mode = true, 2
+Notify("UESP", "ESP Active. Press ] to toggle, [ to switch name mode (" .. GetModeText() .. ")", 5)
 
-    local function cleanup(model)
-        -- Destroy all adornments on model
-        local root = model:FindFirstChild("HumanoidRootPart") or model:FindFirstChild("UpperTorso")
-        if root then
-            local box = root:FindFirstChild(BOX_L)
-            if box then box:Destroy() end
-        end
-        local head = model:FindFirstChild("Head")
-        if head then
-            local tag = head:FindFirstChild(TAG_L)
-            if tag then tag:Destroy() end
-        end
-        local hl = model:FindFirstChildOfClass("Highlight")
-        if hl and hl.Name == CHAMS_L then hl:Destroy() end
-    end
+local function GetPlayerColor(Player)
+    return (Player.Team and Player.Team.TeamColor.Color) or Color3.fromRGB(255, 255, 255)
+end
 
-    local function setupESP(model, plr)
-        -- Create adornments if missing
-        local root = model:FindFirstChild("HumanoidRootPart") or model:FindFirstChild("UpperTorso")
-        if root and not root:FindFirstChild(BOX_L) then
-            local box = Instance.new("BoxHandleAdornment", root)
-            box.Name = BOX_L; box.Adornee = root; box.Size = Vector3.new(1.3,2.2,1.3)
-            box.ZIndex = 4; box.AlwaysOnTop = true
+local function CreateESP(Character, Player)
+    if not Character then return end
+
+    local RootPart = Character:FindFirstChild("HumanoidRootPart") or Character:FindFirstChild("UpperTorso")
+    if RootPart then
+        local Box = RootPart:FindFirstChild("BoxESP")
+        if not Box then
+            Box = Instance.new("BoxHandleAdornment")
+            Box.Name = "BoxESP"
+            Box.Size = Vector3.new(1.3, 2.2, 1.3)
+            Box.Adornee = RootPart
+            Box.AlwaysOnTop = true
+            Box.ZIndex = 5
+            Box.Transparency = 0.2
+            Box.Parent = RootPart
         end
-        local head = model:FindFirstChild("Head")
-        if head and not head:FindFirstChild(TAG_L) then
-            local tag = Instance.new("BillboardGui", head)
-            tag.Name = TAG_L; tag.Adornee = head; tag.Size = UDim2.new(0,160,0,40)
-            tag.AlwaysOnTop = true; tag.StudsOffset = Vector3.new(0,3,0)
-            local lbl = Instance.new("TextLabel", tag)
-            lbl.Name = "_"; lbl.Size = UDim2.new(1,0,1,0)
-            lbl.BackgroundTransparency = 1; lbl.Font = Enum.Font.SourceSansBold
-            lbl.TextScaled = true; lbl.TextStrokeTransparency = 0.5
-        end
-        if not model:FindFirstChild(CHAMS_L) then
-            local hl = Instance.new("Highlight", model)
-            hl.Name = CHAMS_L; hl.FillTransparency = 0.5; hl.OutlineTransparency = 0.3
-        end
-        -- Track in tables
-        if plr then playerChars[model] = plr else npcModels[model] = true end
-        -- Clean up on death
-        model:FindFirstChildOfClass("Humanoid").Died:Connect(function() cleanup(model) end)
+        Box.Color3 = GetPlayerColor(Player)
+        Box.Visible = ESPEnabled
     end
 
-    local function trackModel(model)
-        if model:IsA("Model") and model:FindFirstChildOfClass("Humanoid") then
-            local pl = Players:GetPlayerFromCharacter(model)
-            setupESP(model, pl)
+    local Head = Character:FindFirstChild("Head")
+    if Head then
+        local NameTag = Head:FindFirstChild("NameESP")
+        if not NameTag then
+            NameTag = Instance.new("BillboardGui")
+            NameTag.Name = "NameESP"
+            NameTag.Size = UDim2.new(0, 150, 0, 40)
+            NameTag.Adornee = Head
+            NameTag.AlwaysOnTop = true
+
+            local Label = Instance.new("TextLabel")
+            Label.Name = "NameLabel"
+            Label.BackgroundTransparency = 1
+            Label.Size = UDim2.new(1, 0, 1, 0)
+            Label.Font = Enum.Font.SourceSansBold
+            Label.TextStrokeTransparency = 0.5
+            Label.Parent = NameTag
+            NameTag.Parent = Head
         end
+
+        local Distance = 0
+        local LocalRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+        if LocalRoot then
+            Distance = (LocalRoot.Position - Head.Position).Magnitude
+        end
+
+        local Scale = math.clamp(1 - (Distance / 500), 0.5, 1)
+        local Height = 3 + math.clamp(Distance / 40, 1, 10)
+
+        NameTag.Size = UDim2.new(0, 150 * Scale, 0, 40 * Scale)
+        NameTag.StudsOffset = Vector3.new(0, Height, 0)
+
+        local displayText = ""
+        if ESPMode == 1 then
+            displayText = Player.Name
+        elseif ESPMode == 2 then
+            displayText = Player.DisplayName
+        elseif ESPMode == 3 then
+            displayText = string.format("%s (%s)", Player.DisplayName, Player.Name)
+        end
+
+        NameTag.NameLabel.Text = string.format("%s [%d studs]", displayText, math.floor(Distance))
+        NameTag.NameLabel.TextColor3 = GetPlayerColor(Player)
+        NameTag.NameLabel.TextSize = math.clamp(16 * Scale, 10, 16)
+        NameTag.Enabled = ESPEnabled
     end
 
-    -- Track players
-    Players.PlayerAdded:Connect(function(pl)
-        pl.CharacterAdded:Connect(trackModel)
-    end)
-    for _,pl in ipairs(Players:GetPlayers()) do
-        if pl.Character then trackModel(pl.Character) end
-        pl.CharacterAdded:Connect(trackModel)
+    local Highlight = Character:FindFirstChild("ChamsESP")
+    if not Highlight then
+        Highlight = Instance.new("Highlight")
+        Highlight.Name = "ChamsESP"
+        Highlight.Parent = Character
     end
-    Players.PlayerRemoving:Connect(function(pl)
-        if pl.Character then cleanup(pl.Character) end
-        playerChars[pl.Character] = nil
-    end)
 
-    -- Track NPCs
-    Workspace.ChildAdded:Connect(trackModel)
-    for _,v in ipairs(Workspace:GetChildren()) do trackModel(v) end
+    Highlight.FillColor = GetPlayerColor(Player)
+    Highlight.OutlineColor = GetPlayerColor(Player)
+    Highlight.FillTransparency = 0.15
+    Highlight.OutlineTransparency = 0
+    Highlight.Enabled = ESPEnabled
+end
 
-    RunService.Heartbeat:Connect(function()
-        if not Enabled then return end
-        -- Update players
-        for model,plr in pairs(playerChars) do
-            local root = model:FindFirstChild("HumanoidRootPart") or model:FindFirstChild("UpperTorso")
-            local head = model:FindFirstChild("Head")
-            local dist = 0
-            local lp = Players.LocalPlayer.Character and Players.LocalPlayer.Character.PrimaryPart
-            if lp and head then dist = (lp.Position - head.Position).Magnitude end
-            local scale = math.clamp(1 - (dist/500), 0.6, 1.2)
-            if root then
-                local box = root:FindFirstChild(BOX_L)
-                if box then box.Color3 = (plr.Team and plr.Team.TeamColor.Color) or Color3.new(1,1,1) end
-            end
-            if head then
-                local tag = head:FindFirstChild(TAG_L)
-                if tag then
-                    tag.Size = UDim2.new(0,160*scale,0,40*scale)
-                    tag.StudsOffset = Vector3.new(0,3+dist/50,0)
-                    local lbl = tag:FindFirstChild("_")
-                    lbl.Text = ({plr.Name,plr.DisplayName,plr.DisplayName .. "("..plr.Name..")"})[Mode] .. " ["..math.floor(dist).."]"
-                    lbl.TextColor3 = (plr.Team and plr.Team.TeamColor.Color) or Color3.new(1,1,1)
-                end
-            end
-            local hl = model:FindFirstChild(CHAMS_L)
-            if hl then
-                hl.FillColor = (plr.Team and plr.Team.TeamColor.Color) or Color3.new(1,1,1)
-                hl.OutlineColor = hl.FillColor
-            end
-        end
-        -- Update NPCs
-        for model in pairs(npcModels) do
-            local root = model:FindFirstChild("HumanoidRootPart") or model:FindFirstChild("UpperTorso")
-            local head = model:FindFirstChild("Head")
-            local dist = 0
-            local lp = Players.LocalPlayer.Character and Players.LocalPlayer.Character.PrimaryPart
-            if lp and head then dist = (lp.Position - head.Position).Magnitude end
-            local scale = math.clamp(1 - (dist/500), 0.6, 1.2)
-            if root then
-                local box = root:FindFirstChild(BOX_L)
-                if box then box.Color3 = Color3.fromRGB(200,50,50) end
-            end
-            if head then
-                local tag = head:FindFirstChild(TAG_L)
-                if tag then
-                    tag.Size = UDim2.new(0,160*scale,0,40*scale)
-                    tag.StudsOffset = Vector3.new(0,3+dist/50,0)
-                    local lbl = tag:FindFirstChild("_")
-                    lbl.Text = model.Name
-                    lbl.TextColor3 = Color3.fromRGB(200,50,50)
-                end
-            end
-            local hl = model:FindFirstChild(CHAMS_L)
-            if hl then
-                hl.FillColor = Color3.fromRGB(200,50,50)
-                hl.OutlineColor = hl.FillColor
-            end
-        end
-    end)
+local function UpdateESP()
+    if tick() - LastESPUpdate < 0.1 then return end
+    LastESPUpdate = tick()
 
-    UserInputService.InputBegan:Connect(function(input, gp)
-        if gp then return end
-        if input.KeyCode == Enum.KeyCode.RightBracket then
-            Enabled = not Enabled
-            Notify(Enabled and "On" or "Off", 2)
-            if Enabled then
-                -- Recreate ESP on toggle on
-                for model,plr in pairs(playerChars) do setupESP(model, plr) end
-                for model in pairs(npcModels) do setupESP(model, nil) end
-            else
-                -- Cleanup all
-                for model in pairs(playerChars) do cleanup(model) end
-                for model in pairs(npcModels) do cleanup(model) end
-            end
-        elseif input.KeyCode == Enum.KeyCode.LeftBracket then
-            Mode = (Mode % 3) + 1
-            Notify(Mode, 2)
+    for _, Player in ipairs(Players:GetPlayers()) do
+        if Player ~= LocalPlayer and Player.Character then
+            CreateESP(Player.Character, Player)
         end
-    end)
+    end
+end
+
+UserInputService.InputBegan:Connect(function(Input, GameProcessed)
+    if GameProcessed then return end
+    if Input.KeyCode == Enum.KeyCode.RightBracket then
+        ESPEnabled = not ESPEnabled
+        Notify("UESP", ESPEnabled and "ESP Enabled" or "ESP Disabled")
+        UpdateESP()
+    elseif Input.KeyCode == Enum.KeyCode.LeftBracket then
+        ESPMode = (ESPMode % 3) + 1
+        Notify("UESP", "Name mode: " .. GetModeText())
+        UpdateESP()
+    end
 end)
+
+RunService.Heartbeat:Connect(UpdateESP)
