@@ -1,3 +1,4 @@
+-- Optimized UESP with event-driven tracking to reduce FPS impact
 pcall(function()
     local c = string.char
     local Svc = function(...) return game:GetService(c(...)) end
