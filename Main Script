@@ -5,20 +5,18 @@ local Players = game:GetService(strToName(80,108,97,121,101,114,115)) -- Players
 local RunService = game:GetService(strToName(82,117,110,83,101,114,118,105,99,101)) -- RunService
 local StarterGui = game:GetService(strToName(83,116,97,114,116,101,114,71,117,105)) -- StarterGui
 local UserInputService = game:GetService(strToName(85,115,101,114,73,110,112,117,116,83,101,114,118,105,99,101)) -- InputService
+local Camera = workspace.CurrentCamera
 
 local LocalPlayer = Players.LocalPlayer
 local ESPEnabled = true
+local NameESPEnabled = true
 local LastESPUpdate = 0
-local ESPMode = 2 -- Default is DisplayName
+local ESPMode = 2
 
 local function GetModeText()
-    if ESPMode == 1 then
-        return "Username"
-    elseif ESPMode == 2 then
-        return "DisplayName"
-    elseif ESPMode == 3 then
-        return "Both"
-    end
+    if ESPMode == 1 then return "Username"
+    elseif ESPMode == 2 then return "DisplayName"
+    elseif ESPMode == 3 then return "Both" end
 end
 
 local function Notify(title, message, duration)
@@ -29,10 +27,19 @@ local function Notify(title, message, duration)
     })
 end
 
-Notify("UESP", "ESP Active. Press ] to toggle, [ to switch name mode (" .. GetModeText() .. ")", 5)
+Notify("UESP", "ESP Active. Press ] to toggle, [ to switch name mode (" .. GetModeText() .. "), ; to toggle Name ESP", 5)
 
 local function GetPlayerColor(Player)
     return (Player.Team and Player.Team.TeamColor.Color) or Color3.fromRGB(255, 255, 255)
+end
+
+local function IsPartVisible(part, targetCharacter)
+    local direction = (part.Position - Camera.CFrame.Position).Unit * 500
+    local rayParams = RaycastParams.new()
+    rayParams.FilterType = Enum.RaycastFilterType.Blacklist
+    rayParams.FilterDescendantsInstances = {LocalPlayer.Character, targetCharacter}
+    local result = workspace:Raycast(Camera.CFrame.Position, direction, rayParams)
+    return not result or result.Instance:IsDescendantOf(targetCharacter)
 end
 
 local function CreateESP(Character, Player)
@@ -99,7 +106,28 @@ local function CreateESP(Character, Player)
         NameTag.NameLabel.Text = string.format("%s [%d studs]", displayText, math.floor(Distance))
         NameTag.NameLabel.TextColor3 = GetPlayerColor(Player)
         NameTag.NameLabel.TextSize = math.clamp(16 * Scale, 10, 16)
-        NameTag.Enabled = ESPEnabled
+        NameTag.Enabled = ESPEnabled and NameESPEnabled
+
+        -- Improved visibility check (optimized)
+        local visible = false
+        local partsToCheck = {
+            Character:FindFirstChild("Head"),
+            Character:FindFirstChild("HumanoidRootPart"),
+            Character:FindFirstChild("Torso"),
+            Character:FindFirstChild("UpperTorso"),
+            Character:FindFirstChild("LowerTorso"),
+            Character:FindFirstChild("LeftArm"),
+            Character:FindFirstChild("RightArm"),
+            Character:FindFirstChild("LeftLeg"),
+            Character:FindFirstChild("RightLeg")
+        }
+
+        for _, part in ipairs(partsToCheck) do
+            if part and IsPartVisible(part, Character) then
+                visible = true
+                break
+            end
+        end
     end
 
     local Highlight = Character:FindFirstChild("ChamsESP")
@@ -110,8 +138,8 @@ local function CreateESP(Character, Player)
     end
 
     Highlight.FillColor = GetPlayerColor(Player)
-    Highlight.OutlineColor = GetPlayerColor(Player)
-    Highlight.FillTransparency = 0.15
+    Highlight.OutlineColor = Color3.new(1, 1, 1)
+    Highlight.FillTransparency = 0.7
     Highlight.OutlineTransparency = 0
     Highlight.Enabled = ESPEnabled
 end
@@ -136,6 +164,10 @@ UserInputService.InputBegan:Connect(function(Input, GameProcessed)
     elseif Input.KeyCode == Enum.KeyCode.LeftBracket then
         ESPMode = (ESPMode % 3) + 1
         Notify("UESP", "Name mode: " .. GetModeText())
+        UpdateESP()
+    elseif Input.KeyCode == Enum.KeyCode.Semicolon then
+        NameESPEnabled = not NameESPEnabled
+        Notify("UESP", NameESPEnabled and "Name ESP Enabled" or "Name ESP Disabled")
         UpdateESP()
     end
 end)
