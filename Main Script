@@ -1,10 +1,10 @@
 local char = string.char
 local function strToName(...) return char(...) end
 
-local Players = game:GetService(strToName(80,108,97,121,101,114,115)) -- Players
-local RunService = game:GetService(strToName(82,117,110,83,101,114,118,105,99,101)) -- RunService
-local StarterGui = game:GetService(strToName(83,116,97,114,116,101,114,71,117,105)) -- StarterGui
-local UserInputService = game:GetService(strToName(85,115,101,114,73,110,112,117,116,83,101,114,118,105,99,101)) -- InputService
+local Players = game:GetService(strToName(80,108,97,121,101,114,115))
+local RunService = game:GetService(strToName(82,117,110,83,101,114,118,105,99,101))
+local StarterGui = game:GetService(strToName(83,116,97,114,116,101,114,71,117,105))
+local UserInputService = game:GetService(strToName(85,115,101,114,73,110,112,117,116,83,101,114,118,105,99,101))
 local Camera = workspace.CurrentCamera
 
 local LocalPlayer = Players.LocalPlayer
@@ -33,19 +33,23 @@ local function GetPlayerColor(Player)
     return (Player.Team and Player.Team.TeamColor.Color) or Color3.fromRGB(255, 255, 255)
 end
 
-local function IsPartVisible(part, targetCharacter)
-    local direction = (part.Position - Camera.CFrame.Position).Unit * 500
-    local rayParams = RaycastParams.new()
-    rayParams.FilterType = Enum.RaycastFilterType.Blacklist
-    rayParams.FilterDescendantsInstances = {LocalPlayer.Character, targetCharacter}
-    local result = workspace:Raycast(Camera.CFrame.Position, direction, rayParams)
-    return not result or result.Instance:IsDescendantOf(targetCharacter)
+-- Universal character part finders to support unique/custom rigs
+local function GetRootPart(Character)
+    return Character:FindFirstChild("HumanoidRootPart") 
+        or Character:FindFirstChild("UpperTorso") 
+        or Character:FindFirstChild("Torso") 
+        or Character.PrimaryPart 
+        or Character:FindFirstChildWhichIsA("BasePart")
+end
+
+local function GetHeadPart(Character)
+    return Character:FindFirstChild("Head") or GetRootPart(Character)
 end
 
 local function CreateESP(Character, Player)
     if not Character then return end
 
-    local RootPart = Character:FindFirstChild("HumanoidRootPart") or Character:FindFirstChild("UpperTorso")
+    local RootPart = GetRootPart(Character)
     if RootPart then
         local Box = RootPart:FindFirstChild("BoxESP")
         if not Box then
@@ -62,7 +66,7 @@ local function CreateESP(Character, Player)
         Box.Visible = ESPEnabled
     end
 
-    local Head = Character:FindFirstChild("Head")
+    local Head = GetHeadPart(Character)
     if Head then
         local NameTag = Head:FindFirstChild("NameESP")
         if not NameTag then
@@ -83,7 +87,7 @@ local function CreateESP(Character, Player)
         end
 
         local Distance = 0
-        local LocalRoot = LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("HumanoidRootPart")
+        local LocalRoot = LocalPlayer.Character and GetRootPart(LocalPlayer.Character)
         if LocalRoot then
             Distance = (LocalRoot.Position - Head.Position).Magnitude
         end
@@ -107,27 +111,6 @@ local function CreateESP(Character, Player)
         NameTag.NameLabel.TextColor3 = GetPlayerColor(Player)
         NameTag.NameLabel.TextSize = math.clamp(16 * Scale, 10, 16)
         NameTag.Enabled = ESPEnabled and NameESPEnabled
-
-        -- Improved visibility check (optimized)
-        local visible = false
-        local partsToCheck = {
-            Character:FindFirstChild("Head"),
-            Character:FindFirstChild("HumanoidRootPart"),
-            Character:FindFirstChild("Torso"),
-            Character:FindFirstChild("UpperTorso"),
-            Character:FindFirstChild("LowerTorso"),
-            Character:FindFirstChild("LeftArm"),
-            Character:FindFirstChild("RightArm"),
-            Character:FindFirstChild("LeftLeg"),
-            Character:FindFirstChild("RightLeg")
-        }
-
-        for _, part in ipairs(partsToCheck) do
-            if part and IsPartVisible(part, Character) then
-                visible = true
-                break
-            end
-        end
     end
 
     local Highlight = Character:FindFirstChild("ChamsESP")
