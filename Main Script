@@ -1,158 +1,692 @@
-local char = string.char
-local function strToName(...) return char(...) end
+--[[
+    UESP - Complete client-side player ESP
 
-local Players = game:GetService(strToName(80,108,97,121,101,114,115))
-local RunService = game:GetService(strToName(82,117,110,83,101,114,118,105,99,101))
-local StarterGui = game:GetService(strToName(83,116,97,114,116,101,114,71,117,105))
-local UserInputService = game:GetService(strToName(85,115,101,114,73,110,112,117,116,83,101,114,118,105,99,101))
-local Camera = workspace.CurrentCamera
+    Intended for a Roblox experience you own or are authorized to test.
+    Place this LocalScript in StarterPlayer > StarterPlayerScripts.
+
+    Controls:
+      ]  Toggle all ESP
+      [  Cycle name mode: Username -> DisplayName -> Both
+      ;  Toggle Name ESP
+
+    Notes:
+      - Uses character lifecycle events for cleanup and a modest timed update loop.
+      - Supports standard R6/R15 rigs and many custom rigs with descendant parts.
+      - Uses a compact box centered on a validated rig root, matching the original style.
+      - Does not create Highlight instances while ESP is disabled.
+      - Visuals render on top of walls; blocked line-of-sight fades team colors toward grey.
+]]
+
+local Players = game:GetService("Players")
+local StarterGui = game:GetService("StarterGui")
+local UserInputService = game:GetService("UserInputService")
 
 local LocalPlayer = Players.LocalPlayer
+if not LocalPlayer then
+    error("UESP must run from a LocalScript on the client.")
+end
+
+-- =========================
+-- Configuration
+-- =========================
+
+local Config = {
+    UpdateInterval = 0.10,       -- Seconds between player refreshes
+    MaxDistance = 0,             -- 0 = unlimited distance
+
+    ShowBoxes = true,
+    ShowNames = true,
+    ShowHighlights = true,
+    ShowDistance = true,
+    ShowThroughWalls = true,    -- true = draw boxes, names, and highlights over walls/terrain
+
+    -- Restore the original subtle, compact visual style.
+    BoxTransparency = 0.90,
+    BoxSize = Vector3.new(1.3, 2.2, 1.3),
+    HighlightFillTransparency = 0.90,
+    HighlightOutlineTransparency = 0.60,
+
+    NameTextSize = 14,
+    NameTagHeight = 30,
+    NeutralColor = Color3.fromRGB(235, 235, 235),
+
+    -- Blend the player's team color toward neutral grey when occluded.
+    -- Lower values preserve more team color; 0.40 is a subtle fade.
+    OccludedFade = 0.40,
+    OccludedTint = Color3.fromRGB(170, 170, 170),
+}
+
+-- =========================
+-- Runtime state
+-- =========================
+
 local ESPEnabled = true
 local NameESPEnabled = true
-local LastESPUpdate = 0
-local ESPMode = 2
+local ESPMode = 2 -- 1 = Username, 2 = DisplayName, 3 = Both
+local Running = true
 
-local function GetModeText()
-    if ESPMode == 1 then return "Username"
-    elseif ESPMode == 2 then return "DisplayName"
-    elseif ESPMode == 3 then return "Both" end
+local PlayerStates = {}
+local GlobalConnections = {}
+
+local BOX_NAME = "UESP_Client_Box_v1"
+local NAME_GUI_NAME = "UESP_Client_NameTag_v1"
+local NAME_LABEL_NAME = "UESP_Client_NameLabel_v1"
+local HIGHLIGHT_NAME = "UESP_Client_Highlight_v1"
+
+-- =========================
+-- Utility functions
+-- =========================
+
+local function AddConnection(connection)
+    table.insert(GlobalConnections, connection)
+    return connection
+end
+
+local function DisconnectAll(connections)
+    for _, connection in ipairs(connections) do
+        if connection and connection.Connected then
+            connection:Disconnect()
+        end
+    end
+    table.clear(connections)
 end
 
 local function Notify(title, message, duration)
-    StarterGui:SetCore(strToName(83,101,110,100,78,111,116,105,102,105,99,97,116,105,111,110), {
-        Title = title,
-        Text = message,
-        Duration = duration or 3
-    })
-end
+    -- SetCore can fail while Roblox CoreScripts are still loading.
+    task.spawn(function()
+        local notification = {
+            Title = title,
+            Text = message,
+            Duration = duration or 3,
+        }
 
-Notify("UESP", "ESP Active. Press ] to toggle, [ to switch name mode (" .. GetModeText() .. "), ; to toggle Name ESP", 5)
+        for attempt = 1, 8 do
+            if not Running then
+                return
+            end
 
-local function GetPlayerColor(Player)
-    return (Player.Team and Player.Team.TeamColor.Color) or Color3.fromRGB(255, 255, 255)
-end
+            local success = pcall(function()
+                StarterGui:SetCore("SendNotification", notification)
+            end)
 
--- Universal character part finders to support unique/custom rigs
-local function GetRootPart(Character)
-    return Character:FindFirstChild("HumanoidRootPart") 
-        or Character:FindFirstChild("UpperTorso") 
-        or Character:FindFirstChild("Torso") 
-        or Character.PrimaryPart 
-        or Character:FindFirstChildWhichIsA("BasePart")
-end
+            if success then
+                return
+            end
 
-local function GetHeadPart(Character)
-    return Character:FindFirstChild("Head") or GetRootPart(Character)
-end
-
-local function CreateESP(Character, Player)
-    if not Character then return end
-
-    local RootPart = GetRootPart(Character)
-    if RootPart then
-        local Box = RootPart:FindFirstChild("BoxESP")
-        if not Box then
-            Box = Instance.new("BoxHandleAdornment")
-            Box.Name = "BoxESP"
-            Box.Size = Vector3.new(1.3, 2.2, 1.3)
-            Box.Adornee = RootPart
-            Box.AlwaysOnTop = true
-            Box.ZIndex = 5
-            Box.Transparency = 0.2
-            Box.Parent = RootPart
+            task.wait(0.5)
         end
-        Box.Color3 = GetPlayerColor(Player)
-        Box.Visible = ESPEnabled
+
+        warn("UESP: Could not display Roblox notification. CoreGui may not be ready or may be unavailable.")
+    end)
+end
+
+local function GetModeText()
+    if ESPMode == 1 then
+        return "Username"
+    elseif ESPMode == 2 then
+        return "DisplayName"
+    elseif ESPMode == 3 then
+        return "Both"
     end
 
-    local Head = GetHeadPart(Character)
-    if Head then
-        local NameTag = Head:FindFirstChild("NameESP")
-        if not NameTag then
-            NameTag = Instance.new("BillboardGui")
-            NameTag.Name = "NameESP"
-            NameTag.Size = UDim2.new(0, 150, 0, 40)
-            NameTag.Adornee = Head
-            NameTag.AlwaysOnTop = true
-
-            local Label = Instance.new("TextLabel")
-            Label.Name = "NameLabel"
-            Label.BackgroundTransparency = 1
-            Label.Size = UDim2.new(1, 0, 1, 0)
-            Label.Font = Enum.Font.SourceSansBold
-            Label.TextStrokeTransparency = 0.5
-            Label.Parent = NameTag
-            NameTag.Parent = Head
-        end
-
-        local Distance = 0
-        local LocalRoot = LocalPlayer.Character and GetRootPart(LocalPlayer.Character)
-        if LocalRoot then
-            Distance = (LocalRoot.Position - Head.Position).Magnitude
-        end
-
-        local Scale = math.clamp(1 - (Distance / 500), 0.5, 1)
-        local Height = 3 + math.clamp(Distance / 40, 1, 10)
-
-        NameTag.Size = UDim2.new(0, 150 * Scale, 0, 40 * Scale)
-        NameTag.StudsOffset = Vector3.new(0, Height, 0)
-
-        local displayText = ""
-        if ESPMode == 1 then
-            displayText = Player.Name
-        elseif ESPMode == 2 then
-            displayText = Player.DisplayName
-        elseif ESPMode == 3 then
-            displayText = string.format("%s (%s)", Player.DisplayName, Player.Name)
-        end
-
-        NameTag.NameLabel.Text = string.format("%s [%d studs]", displayText, math.floor(Distance))
-        NameTag.NameLabel.TextColor3 = GetPlayerColor(Player)
-        NameTag.NameLabel.TextSize = math.clamp(16 * Scale, 10, 16)
-        NameTag.Enabled = ESPEnabled and NameESPEnabled
-    end
-
-    local Highlight = Character:FindFirstChild("ChamsESP")
-    if not Highlight then
-        Highlight = Instance.new("Highlight")
-        Highlight.Name = "ChamsESP"
-        Highlight.Parent = Character
-    end
-
-    Highlight.FillColor = GetPlayerColor(Player)
-    Highlight.OutlineColor = Color3.new(1, 1, 1)
-    Highlight.FillTransparency = 0.7
-    Highlight.OutlineTransparency = 0
-    Highlight.Enabled = ESPEnabled
+    return "DisplayName"
 end
 
-local function UpdateESP()
-    if tick() - LastESPUpdate < 0.1 then return end
-    LastESPUpdate = tick()
+local function GetPlayerColor(player)
+    if not player.Neutral and player.Team then
+        return player.Team.TeamColor.Color
+    end
 
-    for _, Player in ipairs(Players:GetPlayers()) do
-        if Player ~= LocalPlayer and Player.Character then
-            CreateESP(Player.Character, Player)
+    return Config.NeutralColor
+end
+
+local function FindDescendantOfClass(model, className)
+    for _, descendant in ipairs(model:GetDescendants()) do
+        if descendant:IsA(className) then
+            return descendant
+        end
+    end
+
+    return nil
+end
+
+local function FindNamedBasePart(model, partName)
+    for _, descendant in ipairs(model:GetDescendants()) do
+        if descendant.Name == partName and descendant:IsA("BasePart") then
+            return descendant
+        end
+    end
+
+    return nil
+end
+
+local function GetRootPart(character)
+    -- Prefer actual rig roots. Never choose the Head as a root merely because
+    -- it happens to be the largest/first available part.
+    local humanoid = FindDescendantOfClass(character, "Humanoid")
+
+    local namedRoot = FindNamedBasePart(character, "HumanoidRootPart")
+    if namedRoot then
+        return namedRoot
+    end
+
+    if humanoid and humanoid.RootPart and humanoid.RootPart:IsA("BasePart") then
+        return humanoid.RootPart
+    end
+
+    for _, name in ipairs({
+        "RootPart",
+        "LowerTorso",
+        "Torso",
+        "UpperTorso",
+    }) do
+        local part = FindNamedBasePart(character, name)
+        if part then
+            return part
+        end
+    end
+
+    if character.PrimaryPart
+        and character.PrimaryPart:IsA("BasePart")
+        and character.PrimaryPart.Name ~= "Head" then
+        return character.PrimaryPart
+    end
+
+    -- Last resort for unusual rigs: choose the largest body part, excluding
+    -- heads, accessories, and tools. This is safer than blindly choosing any
+    -- BasePart, which can accidentally make the ESP box follow the head.
+    local bestPart = nil
+    local bestVolume = -1
+
+    for _, descendant in ipairs(character:GetDescendants()) do
+        if descendant:IsA("BasePart")
+            and descendant.Name ~= "Head"
+            and not descendant:FindFirstAncestorWhichIsA("Accessory")
+            and not descendant:FindFirstAncestorWhichIsA("Tool") then
+
+            local size = descendant.Size
+            local volume = size.X * size.Y * size.Z
+            if volume > bestVolume then
+                bestVolume = volume
+                bestPart = descendant
+            end
+        end
+    end
+
+    return bestPart
+end
+
+local function GetHeadPart(character, fallbackRoot)
+    return FindNamedBasePart(character, "Head") or fallbackRoot
+end
+
+local function GetHumanoid(character)
+    return FindDescendantOfClass(character, "Humanoid")
+end
+
+local function GetOrCreate(parent, name, className)
+    local existing = parent:FindFirstChild(name)
+    if existing then
+        if existing:IsA(className) then
+            return existing
+        end
+
+        -- Never manipulate an unrelated object merely because its name matches.
+        return nil
+    end
+
+    local instance = Instance.new(className)
+    instance.Name = name
+    instance.Parent = parent
+    return instance
+end
+
+local function DestroyInstance(instance)
+    if instance then
+        pcall(function()
+            instance:Destroy()
+        end)
+    end
+end
+
+-- =========================
+-- Visual cleanup / creation
+-- =========================
+
+local function DestroyNameVisual(state)
+    DestroyInstance(state.nameGui)
+    state.nameGui = nil
+    state.nameLabel = nil
+    state.nameHead = nil
+end
+
+local function DestroyBoxVisual(state)
+    DestroyInstance(state.box)
+    state.box = nil
+    state.boxRoot = nil
+end
+
+local function DestroyHighlightVisual(state)
+    DestroyInstance(state.highlight)
+    state.highlight = nil
+end
+
+local function DestroyVisuals(state)
+    DestroyBoxVisual(state)
+    DestroyNameVisual(state)
+    DestroyHighlightVisual(state)
+end
+
+local function EnsureBox(state, rootPart)
+    if state.boxRoot ~= rootPart then
+        DestroyBoxVisual(state)
+        state.boxRoot = rootPart
+    end
+
+    if not Config.ShowBoxes then
+        DestroyBoxVisual(state)
+        return nil
+    end
+
+    if not state.box then
+        state.box = GetOrCreate(rootPart, BOX_NAME, "BoxHandleAdornment")
+    end
+
+    local box = state.box
+    if not box then
+        return nil
+    end
+
+    box.Adornee = rootPart
+    box.AlwaysOnTop = Config.ShowThroughWalls
+    box.ZIndex = 5
+    box.Transparency = Config.BoxTransparency
+    box.Visible = true
+
+    return box
+end
+
+local function EnsureNameTag(state, head)
+    if state.nameHead ~= head then
+        DestroyNameVisual(state)
+        state.nameHead = head
+    end
+
+    if not Config.ShowNames or not NameESPEnabled then
+        DestroyNameVisual(state)
+        return nil, nil
+    end
+
+    if not state.nameGui then
+        state.nameGui = GetOrCreate(head, NAME_GUI_NAME, "BillboardGui")
+    end
+
+    local gui = state.nameGui
+    if not gui then
+        return nil, nil
+    end
+
+    if not state.nameLabel then
+        state.nameLabel = GetOrCreate(gui, NAME_LABEL_NAME, "TextLabel")
+    end
+
+    local label = state.nameLabel
+    if not label then
+        DestroyNameVisual(state)
+        return nil, nil
+    end
+
+    gui.Adornee = head
+    gui.AlwaysOnTop = Config.ShowThroughWalls
+    gui.LightInfluence = 0
+    gui.MaxDistance = Config.MaxDistance
+    gui.Size = UDim2.fromOffset(180, Config.NameTagHeight)
+    gui.StudsOffset = Vector3.new(0, math.max((head.Size.Y * 0.5) + 0.75, 1.5), 0)
+    gui.Enabled = true
+
+    label.BackgroundTransparency = 1
+    label.BorderSizePixel = 0
+    label.Size = UDim2.fromScale(1, 1)
+    label.Position = UDim2.fromScale(0, 0)
+    label.Font = Enum.Font.GothamSemibold
+    label.TextSize = Config.NameTextSize
+    label.TextScaled = false
+    label.TextWrapped = false
+    label.TextXAlignment = Enum.TextXAlignment.Center
+    label.TextYAlignment = Enum.TextYAlignment.Center
+    label.TextStrokeColor3 = Color3.new(0, 0, 0)
+    label.TextStrokeTransparency = 0.2
+    label.TextColor3 = Color3.new(1, 1, 1)
+
+    return gui, label
+end
+
+local function EnsureHighlight(state, character)
+    if not Config.ShowHighlights then
+        DestroyHighlightVisual(state)
+        return nil
+    end
+
+    if not state.highlight then
+        state.highlight = GetOrCreate(character, HIGHLIGHT_NAME, "Highlight")
+    end
+
+    local highlight = state.highlight
+    if not highlight then
+        return nil
+    end
+
+    highlight.Adornee = character
+    highlight.DepthMode = Config.ShowThroughWalls
+        and Enum.HighlightDepthMode.AlwaysOnTop
+        or Enum.HighlightDepthMode.Occluded
+    highlight.FillTransparency = Config.HighlightFillTransparency
+    highlight.OutlineTransparency = Config.HighlightOutlineTransparency
+    highlight.Enabled = true
+
+    return highlight
+end
+
+-- =========================
+-- Per-player update
+-- =========================
+
+local function IsCharacterOccluded(targetCharacter, targetPart)
+    local camera = workspace.CurrentCamera
+    local localCharacter = LocalPlayer.Character
+
+    if not camera or not targetCharacter or not targetPart then
+        return false
+    end
+
+    local origin = camera.CFrame.Position
+    local direction = targetPart.Position - origin
+    if direction.Magnitude <= 0.001 then
+        return false
+    end
+
+    -- Exclude both characters so the ray only reports intervening geometry.
+    -- Terrain and queryable map parts remain in the raycast.
+    local params = RaycastParams.new()
+    params.FilterType = Enum.RaycastFilterType.Exclude
+    params.FilterDescendantsInstances = {
+        localCharacter,
+        targetCharacter,
+    }
+    params.IgnoreWater = true
+
+    local result = workspace:Raycast(origin, direction, params)
+    return result ~= nil
+end
+
+local function GetNameText(player)
+    if ESPMode == 1 then
+        return player.Name
+    elseif ESPMode == 2 then
+        return player.DisplayName
+    end
+
+    return string.format("%s (%s)", player.DisplayName, player.Name)
+end
+
+local function UpdatePlayer(player, state, localRoot)
+    local character = player.Character
+
+    if state.character ~= character then
+        DestroyVisuals(state)
+        state.character = character
+    end
+
+    if not character or not character.Parent then
+        DestroyVisuals(state)
+        return
+    end
+
+    local humanoid = GetHumanoid(character)
+    if humanoid and humanoid.Health <= 0 then
+        DestroyVisuals(state)
+        return
+    end
+
+    local rootPart = GetRootPart(character)
+    if not rootPart then
+        DestroyVisuals(state)
+        return
+    end
+
+    local distance = nil
+    if localRoot and localRoot.Parent then
+        distance = (localRoot.Position - rootPart.Position).Magnitude
+    end
+
+    if distance and Config.MaxDistance > 0 and distance > Config.MaxDistance then
+        -- Destroy, rather than merely disable, Highlight instances to free slots.
+        DestroyVisuals(state)
+        return
+    end
+
+    local teamColor = GetPlayerColor(player)
+    local targetPart = GetHeadPart(character, rootPart)
+    local occluded = IsCharacterOccluded(character, targetPart)
+
+    -- Preserve each team's identity while making occluded players look muted.
+    -- This is a blend, not a replacement with a single grey color.
+    local espColor = teamColor
+    if occluded then
+        espColor = teamColor:Lerp(Config.OccludedTint, Config.OccludedFade)
+    end
+
+    -- Compact root-centered box, matching the original UESP appearance.
+    -- Do not use Model:GetBoundingBox() here: accessories and unusual rigs can
+    -- inflate that bound and make a giant rectangle that appears offset/head-led.
+    local box = EnsureBox(state, rootPart)
+    if box then
+        box.Size = Config.BoxSize
+        box.CFrame = CFrame.new()
+        box.Color3 = espColor
+    end
+
+    local highlight = EnsureHighlight(state, character)
+    if highlight then
+        highlight.FillColor = espColor
+        highlight.OutlineColor = occluded
+            and teamColor:Lerp(Config.OccludedTint, Config.OccludedFade)
+            or Color3.new(1, 1, 1)
+    end
+
+    local head = targetPart
+    local nameGui, nameLabel = EnsureNameTag(state, head)
+
+    if nameGui and nameLabel then
+        local displayText = GetNameText(player)
+        local finalText = displayText
+
+        if Config.ShowDistance then
+            if distance then
+                finalText = string.format("%s [%d studs]", displayText, math.floor(distance + 0.5))
+            else
+                finalText = string.format("%s [distance unavailable]", displayText)
+            end
+        end
+
+        if nameLabel.Text ~= finalText then
+            nameLabel.Text = finalText
+        end
+
+        nameLabel.TextColor3 = espColor
+
+        -- Give longer names more room, with a bounded width.
+        local width = math.clamp(110 + (#finalText * 5), 150, 340)
+        nameGui.Size = UDim2.fromOffset(width, Config.NameTagHeight)
+    end
+end
+
+local function UpdateAllPlayers()
+    local localCharacter = LocalPlayer.Character
+    local localRoot = localCharacter and GetRootPart(localCharacter) or nil
+
+    for player, state in pairs(PlayerStates) do
+        if player.Parent == Players then
+            local success, err = pcall(UpdatePlayer, player, state, localRoot)
+            if success then
+                state.lastError = nil
+            else
+                local message = tostring(err)
+                if state.lastError ~= message then
+                    warn(string.format("UESP: update failed for %s: %s", player.Name, message))
+                    state.lastError = message
+                end
+                DestroyVisuals(state)
+            end
         end
     end
 end
 
-UserInputService.InputBegan:Connect(function(Input, GameProcessed)
-    if GameProcessed then return end
-    if Input.KeyCode == Enum.KeyCode.RightBracket then
-        ESPEnabled = not ESPEnabled
-        Notify("UESP", ESPEnabled and "ESP Enabled" or "ESP Disabled")
-        UpdateESP()
-    elseif Input.KeyCode == Enum.KeyCode.LeftBracket then
+-- =========================
+-- Player lifecycle management
+-- =========================
+
+local function RemovePlayer(player)
+    local state = PlayerStates[player]
+    if not state then
+        return
+    end
+
+    DisconnectAll(state.connections)
+    DestroyVisuals(state)
+    PlayerStates[player] = nil
+end
+
+local function TrackPlayer(player)
+    if player == LocalPlayer or PlayerStates[player] then
+        return
+    end
+
+    local state = {
+        character = player.Character,
+        root = nil,
+        boxRoot = nil,
+        box = nil,
+        nameHead = nil,
+        nameGui = nil,
+        nameLabel = nil,
+        highlight = nil,
+        connections = {},
+    }
+
+    PlayerStates[player] = state
+
+    table.insert(state.connections, player.CharacterAdded:Connect(function(character)
+        DestroyVisuals(state)
+        state.character = character
+    end))
+
+    table.insert(state.connections, player.CharacterRemoving:Connect(function(character)
+        if state.character == character then
+            DestroyVisuals(state)
+            state.character = nil
+        end
+    end))
+end
+
+-- =========================
+-- Toggle handling
+-- =========================
+
+local function SetESPEnabled(enabled)
+    ESPEnabled = enabled
+
+    if not ESPEnabled then
+        for _, state in pairs(PlayerStates) do
+            DestroyVisuals(state)
+        end
+    else
+        UpdateAllPlayers()
+    end
+
+    Notify("UESP", ESPEnabled and "ESP Enabled" or "ESP Disabled")
+end
+
+local function SetNameESPEnabled(enabled)
+    NameESPEnabled = enabled
+
+    if not NameESPEnabled then
+        for _, state in pairs(PlayerStates) do
+            DestroyNameVisual(state)
+        end
+    else
+        if ESPEnabled then
+            UpdateAllPlayers()
+        end
+    end
+
+    Notify("UESP", NameESPEnabled and "Name ESP Enabled" or "Name ESP Disabled")
+end
+
+-- =========================
+-- Initialization
+-- =========================
+
+for _, player in ipairs(Players:GetPlayers()) do
+    TrackPlayer(player)
+end
+
+AddConnection(Players.PlayerAdded:Connect(TrackPlayer))
+AddConnection(Players.PlayerRemoving:Connect(RemovePlayer))
+
+AddConnection(UserInputService.InputBegan:Connect(function(input, gameProcessed)
+    if gameProcessed or UserInputService:GetFocusedTextBox() then
+        return
+    end
+
+    if input.KeyCode == Enum.KeyCode.RightBracket then
+        SetESPEnabled(not ESPEnabled)
+    elseif input.KeyCode == Enum.KeyCode.LeftBracket then
         ESPMode = (ESPMode % 3) + 1
         Notify("UESP", "Name mode: " .. GetModeText())
-        UpdateESP()
-    elseif Input.KeyCode == Enum.KeyCode.Semicolon then
-        NameESPEnabled = not NameESPEnabled
-        Notify("UESP", NameESPEnabled and "Name ESP Enabled" or "Name ESP Disabled")
-        UpdateESP()
+        if ESPEnabled then
+            UpdateAllPlayers()
+        end
+    elseif input.KeyCode == Enum.KeyCode.Semicolon then
+        SetNameESPEnabled(not NameESPEnabled)
+    end
+end))
+
+local function Shutdown()
+    if not Running then
+        return
+    end
+
+    Running = false
+    DisconnectAll(GlobalConnections)
+
+    local trackedPlayers = {}
+    for player in pairs(PlayerStates) do
+        table.insert(trackedPlayers, player)
+    end
+
+    for _, player in ipairs(trackedPlayers) do
+        RemovePlayer(player)
+    end
+
+    table.clear(PlayerStates)
+end
+
+AddConnection(script.Destroying:Connect(Shutdown))
+
+-- Run at a fixed interval instead of invoking an update callback every frame.
+task.spawn(function()
+    while Running do
+        if ESPEnabled then
+            UpdateAllPlayers()
+        end
+        task.wait(Config.UpdateInterval)
     end
 end)
 
-RunService.Heartbeat:Connect(UpdateESP)
+UpdateAllPlayers()
+Notify(
+    "UESP",
+    "ESP Active | ] Toggle | [ Name mode (" .. GetModeText() .. ") | ; Name ESP",
+    5
+)
