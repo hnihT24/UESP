@@ -1,10 +1,10 @@
 --[[
-    UESP - Maximum Performance Edition
+    UESP - Maximum Performance Edition (Complete Fixed Version)
     Key Improvements:
     - Single persistent RaycastParams (Zero GC allocation overhead)
     - Staggered player updates spread across rendering frames (Zero CPU spikes)
     - Throttled wall-visibility raycasts (Every 0.4s per player)
-    - Event-indexed part references (Zero tree searching)
+    - Event-indexed part references with robust respawn re-indexing (Zero tree searching)
 ]]
 
 local Players = game:GetService("Players")
@@ -22,9 +22,9 @@ end
 -- =========================
 
 local Config = {
-    UpdateInterval = 0.15,          -- Base update rate (seconds)
-    RaycastInterval = 0.40,         -- Wall visibility update rate (seconds)
-    MaxDistance = 0,                -- 0 = Unlimited
+    UpdateInterval = 0.15,            -- Base update rate (seconds)
+    RaycastInterval = 0.40,           -- Wall visibility update rate (seconds)
+    MaxDistance = 0,                  -- 0 = Unlimited
 
     ShowBoxes = true,
     ShowNames = true,
@@ -37,8 +37,8 @@ local Config = {
     HighlightFillTransparency = 0.90,
     HighlightOutlineTransparency = 0.60,
 
-    NameTextSize = 14,
-    NameTagHeight = 30,
+    NameTextSize = 10,
+    NameTagHeight = 40,
     NeutralColor = Color3.fromRGB(235, 235, 235),
 
     OccludedFade = 0.40,
@@ -140,7 +140,7 @@ local function DestroyVisuals(state)
 end
 
 -- =========================
--- Character Indexing (No descendant scanning during updates)
+-- Character Indexing
 -- =========================
 
 local function IndexCharacterParts(character)
@@ -159,11 +159,10 @@ local function IndexCharacterParts(character)
 end
 
 -- =========================
--- Optimized Occlusion Test (Reuses RaycastParams & Throttled)
+-- Optimized Occlusion Test
 -- =========================
 
 local function CheckOcclusionThrottled(targetCharacter, targetPart, state, now)
-    -- Only re-raycast every 0.4 seconds per player
     if now - state.lastOcclusionCheck < Config.RaycastInterval then
         return state.isOccluded
     end
@@ -185,7 +184,6 @@ local function CheckOcclusionThrottled(targetCharacter, targetPart, state, now)
         return false
     end
 
-    -- Reuse persistent RaycastParams without creating garbage
     SharedRaycastParams.FilterDescendantsInstances = { localCharacter, targetCharacter }
     
     local result = workspace:Raycast(origin, direction, SharedRaycastParams)
@@ -409,7 +407,7 @@ AddConnection(UserInputService.InputBegan:Connect(function(input, gameProcessed)
     end
 end))
 
--- Distributed update loop (Yields between player processing chunks)
+-- Distributed update loop with fixed character re-verification
 task.spawn(function()
     while Running do
         if ESPEnabled then
@@ -424,14 +422,20 @@ task.spawn(function()
                 end
             end
 
-            -- Process players in small batches across frames to avoid CPU spikes
             local batchSize = 5
             for i = 1, #playerList do
                 local entry = playerList[i]
+                local char = entry.player.Character
+                if entry.state.character ~= char then
+                    DestroyVisuals(entry.state)
+                    entry.state.character = char
+                    entry.state.rootPart, entry.state.headPart, entry.state.humanoid = IndexCharacterParts(char)
+                end
+
                 pcall(UpdatePlayer, entry.player, entry.state, localRoot, now)
 
                 if i % batchSize == 0 then
-                    RunService.Heartbeat:Wait() -- Yield to next frame
+                    RunService.Heartbeat:Wait()
                 end
             end
         end
